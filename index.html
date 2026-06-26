@@ -33,7 +33,7 @@ const SITE_ID = "SPENF";
 
 // ✅ Title
 document.getElementById("title").innerText =
-"COSMOS 30-Min Dashboard – Last 3 Days (Updated " +
+"COSMOS 30-Min Dashboard – Last 7 Days (Updated " +
 new Date().toISOString().substring(0,10) + ")";
 
 // ✅ Zoom config
@@ -113,7 +113,7 @@ async function fetchData(){
 
     const end=new Date();
     const start=new Date();
-    start.setDate(end.getDate()-3);
+    start.setDate(end.getDate()-7);
 
     const url =
     `${BASE_URL}/collections/30M/locations/${SITE_ID}` +
