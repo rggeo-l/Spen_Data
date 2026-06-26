@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>COSMOS 30M Dashboard</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
+
+</head>
+
+<body>
+
+<h2 id="title"></h2>
+<button onclick="resetZoom()">Reset Zoom</button>
+<p id="status">Loading...</p>
+
+<canvas id="chart1"></canvas>
+<canvas id="chart2"></canvas>
+<canvas id="chart3"></canvas>
+<canvas id="chart4"></canvas>
+<canvas id="chart5"></canvas>
+<canvas id="chart6"></canvas>
+
+<p style="font-size:12px; margin-top:40px;">
+<strong>Acknowledgement:</strong> COSMOS-UK data owned by UK Centre for Ecology and Hydrology.
+COSMOS-UK is supported by the Natural Environment Research Council award number NE/Y006208/1
+as part of the National Capability for UK Challenges. Contains public sector information licensed under the Open Government Licence v3.0.
+</p>
+
+<script>
+const BASE_URL = "https://cosmos-api.ceh.ac.uk";
+const SITE_ID = "SPENF";
+
+// ✅ Title
+document.getElementById("title").innerText =
+"COSMOS 30-Min Dashboard – Last 7 Days (Updated " +
+new Date().toISOString().substring(0,10) + ")";
+
+// ✅ Zoom config
+const zoomOptions = {
+    pan: { enabled: true, mode: 'x' },
+    zoom: {
+        wheel: { enabled: true },
+        pinch: { enabled: true },
+        mode: 'x'
+    }
+};
+
+// ✅ Day/night shading plugin
+const dayNightPlugin = {
+    id: 'dayNightShading',
+
+    beforeDraw(chart) {
+
+        const {ctx, chartArea, scales} = chart;
+        const xScale = scales.x;
+        const rawDates = chart.config._rawDates;
+
+        if (!rawDates || !xScale) return;
+
+        ctx.save();
+
+        rawDates.forEach((d, i) => {
+
+            const hour = new Date(d).getUTCHours();
+
+            const isNight = (hour < 6 || hour >= 18);
+
+            if (isNight) {
+
+                const xStart = xScale.getPixelForValue(i);
+                const xEnd = xScale.getPixelForValue(i + 1);
+
+                // ✅ skip invalid regions (important for zoom)
+                if (!isFinite(xStart) || !isFinite(xEnd)) return;
+
+                ctx.fillStyle = 'rgba(0,0,80,0.08)';
+                ctx.fillRect(
+                    xStart,
+                    chartArea.top,
+                    xEnd - xStart,
+                    chartArea.bottom - chartArea.top
+                );
+            }
+        });
+
+        ctx.restore();
+    }
+};
+Chart.register(dayNightPlugin);
+
+// ✅ Helpers
+function formatDate(d){
+    return d.toISOString().split('.')[0] + 'Z';
+}
+function getSafe(r,n){
+    return r[n] ? r[n].values : [];
+}
+
+const charts=[];
+function createChart(id,config){
+    const c = new Chart(document.getElementById(id),config);
+    charts.push(c);
+    return c;
+}
+
+function resetZoom(){
+    charts.forEach(c=>c.resetZoom());
+}
+
+// ✅ Fetch
+async function fetchData(){
+
+    const end=new Date();
+    const start=new Date();
+    start.setDate(end.getDate()-7);
+
+    const url =
+    `${BASE_URL}/collections/30M/locations/${SITE_ID}` +
+    `?datetime=${formatDate(start)}/${formatDate(end)}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    const c = data.coverages[0];
+    const r = c.ranges;
+
+    return {
+        rawDates: c.domain.axes.t.values,
+	dates: c.domain.axes.t.values.map(d=>d.substring(5,16)),
+
+        ta:getSafe(r,'ta'),
+        ta_max:getSafe(r,'ta_max'),
+        ta_min:getSafe(r,'ta_min'),
+        rh:getSafe(r,'rh'),
+
+        precip:getSafe(r,'precip'),
+
+        st2:getSafe(r,'stp_tsoil2'),
+        st5:getSafe(r,'stp_tsoil5'),
+        st10:getSafe(r,'stp_tsoil10'),
+
+        sm5_1:getSafe(r,'tdt3_vwc'),
+        sm5_2:getSafe(r,'tdt4_vwc'),
+        sm10_1:getSafe(r,'tdt1_vwc'),
+        sm10_2:getSafe(r,'tdt2_vwc'),
+
+        wd:getSafe(r,'wd'),
+        ws:getSafe(r,'ws'),
+
+        rn:getSafe(r,'rn'),
+        lwin:getSafe(r,'lwin'),
+        lwout:getSafe(r,'lwout'),
+        swin:getSafe(r,'swin'),
+        swout:getSafe(r,'swout')
+    };
+}
+
+// ✅ Wind rose
+function processWindRose(wd,ws){
+    const dirBins=12;
+    const speedBins=[0,2,5,8,11,15];
+
+    const out=Array(speedBins.length-1)
+        .fill().map(()=>Array(dirBins).fill(0));
+
+    wd.forEach((d,i)=>{
+        if(d==null||ws[i]==null) return;
+        const dir=Math.floor(d/(360/dirBins))%dirBins;
+        for(let s=0;s<speedBins.length-1;s++){
+            if(ws[i]>=speedBins[s]&&ws[i]<speedBins[s+1]){
+                out[s][dir]++;
+                break;
+            }
+        }
+    });
+    return out;
+}
+
+// ✅ Main
+fetchData().then(d=>{
+
+document.getElementById("status").innerText="Loaded";
+
+// --------- PLOT 1 (Temp + RH)
+const chart1 = createChart("chart1",{
+type:'line',
+data:{labels:d.dates,datasets:[
+
+
+{label:'Temperature',data:d.ta,borderColor:'orange'},
+{label:'RH',data:d.rh,borderColor:'green',yAxisID:'y1'}
+
+]},
+options:{
+plugins:{title:{display:true,text:"Air Temperature and Relative Humidity"},zoom:zoomOptions,dayNightShading:{}},
+scales:{
+y:{title:{display:true,text:'Temperature (°C)'}},
+y1:{position:'right',title:{display:true,text:'RH (%)'},grid:{drawOnChartArea:false}}
+}}
+});
+chart1.config._rawDates = d.rawDates;
+
+// --------- PLOT 2 (Rain)
+const chart2 = createChart("chart2",{
+type:'bar',
+data:{labels:d.dates,datasets:[{label:'Rainfall',data:d.precip,backgroundColor:'blue'}]},
+options:{
+plugins:{title:{display:true,text:"Rainfall"},zoom:zoomOptions,dayNightShading:{}},
+scales:{y:{title:{display:true,text:'Rainfall (mm)'}}}
+}
+});
+chart2.config._rawDates = d.rawDates;
+
+// --------- PLOT 3 (Soil Moisture)
+const chart3 = createChart("chart3",{
+type:'line',
+data:{labels:d.dates,datasets:[
+{label:'5cm A',data:d.sm5_1},
+{label:'5cm B',data:d.sm5_2},
+{label:'10cm A',data:d.sm10_1},
+{label:'10cm B',data:d.sm10_2}
+]},
+options:{
+plugins:{title:{display:true,text:"Soil Moisture"},zoom:zoomOptions,dayNightShading:{}},
+scales:{y:{title:{display:true,text:'VWC (%)'}}}
+}
+});
+chart3.config._rawDates = d.rawDates;
+
+// --------- PLOT 4 (Soil Temp)
+const chart4 = createChart("chart4",{
+type:'line',
+data:{labels:d.dates,datasets:[
+{label:'2cm',data:d.st2},
+{label:'5cm',data:d.st5},
+{label:'10cm',data:d.st10}
+]},
+options:{
+plugins:{title:{display:true,text:"Soil Temperature"},zoom:zoomOptions,dayNightShading:{}},
+scales:{y:{title:{display:true,text:'Temperature (°C)'}}}
+}
+});
+chart4.config._rawDates = d.rawDates;
+
+// --------- PLOT 5 (Wind)
+const wind=processWindRose(d.wd,d.ws);
+
+createChart("chart5",{
+type:'polarArea',
+data:{
+labels:['N','NNE','NE','E','ESE','SE','S','SSW','SW','W','WNW','NW'],
+datasets: wind.map((b,i)=>({
+label:`${[0,2,5,8,11][i]}-${[2,5,8,11,15][i]} m/s`,
+data:b,
+backgroundColor:['#d4f0ff','#92c5de','#4393c3','#2166ac','#053061'][i]
+}))
+},
+options:{plugins:{title:{display:true,text:"Wind Direction"}}}
+});
+
+// --------- PLOT 6 (Radiation)
+const chart6 = createChart("chart6",{
+type:'bar',
+data:{
+labels:d.dates,
+datasets:[
+{label:'Net Radiation',data:d.rn,backgroundColor:'rgba(120,120,120,0.4)'},
+{type:'line',label:'SW In',data:d.swin,borderColor:'darkorange'},
+{type:'line',label:'SW Out',data:d.swout,borderColor:'gold'},
+{type:'line',label:'LW In',data:d.lwin,borderColor:'purple'},
+{type:'line',label:'LW Out',data:d.lwout,borderColor:'blue'}
+]},
+options:{
+plugins:{title:{display:true,text:"Incoming and Outgoing Radiation"},zoom:zoomOptions,dayNightShading:{}},
+scales:{y:{title:{display:true,text:'Radiation (MJ m⁻² day⁻¹)'}}}
+}
+});
+chart6.config._rawDates = d.rawDates;
+
+// ✅ Hover sync
+document.querySelectorAll("canvas").forEach(c=>{
+c.addEventListener("mousemove",evt=>{
+charts.forEach(ch=>{
+const pts=ch.getElementsAtEventForMode(evt,'index',{intersect:false},true);
+ch.setActiveElements(pts);
+ch.tooltip.setActiveElements(pts);
+ch.update();
+});
+});
+c.addEventListener("mouseleave",()=>{
+charts.forEach(ch=>{ch.setActiveElements([]);ch.update();});
+});
+});
+
+}).catch(err=>{
+document.getElementById("status").innerText="Error: "+err.message;
+});
+</script>
+
+</body>
+</html>
