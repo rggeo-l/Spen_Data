@@ -130,8 +130,6 @@ async function fetchData(){
 	dates: c.domain.axes.t.values.map(d=>d.substring(5,16)),
 
         ta:getSafe(r,'ta'),
-        ta_max:getSafe(r,'ta_max'),
-        ta_min:getSafe(r,'ta_min'),
         rh:getSafe(r,'rh'),
 
         precip:getSafe(r,'precip'),
@@ -187,14 +185,9 @@ const chart1 = createChart("chart1",{
 type:'line',
 data:{labels:d.dates,datasets:[
 
-{label:'Max Temp',data:d.ta_max,borderColor:'red'},
-{label:'Avg Temp',data:d.ta,borderColor:'orange'},
-{label:'Min Temp',data:d.ta_min,borderColor:'blue'},
+{label:'Temperature',data:d.ta,borderColor:'orange'},
 
-{data:d.ta_max,backgroundColor:'rgba(255,0,0,0.12)',borderWidth:0,pointRadius:0,fill:{target:1}},
-{data:d.ta_min,backgroundColor:'rgba(0,0,255,0.12)',borderWidth:0,pointRadius:0,fill:{target:1}},
-
-{label:'RH',data:d.rh,borderColor:'green',yAxisID:'y1'}
+{label:'Relative Humidity',data:d.rh,borderColor:'green',yAxisID:'y1'}
 
 ]},
 options:{
